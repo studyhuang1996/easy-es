@@ -3,6 +3,8 @@ package cn.easyes.extension.plugins;
 
 import cn.easyes.annotation.Intercepts;
 import cn.easyes.annotation.Signature;
+import cn.easyes.common.exception.EasyEsException;
+import cn.easyes.common.utils.CollectionUtils;
 import cn.easyes.common.utils.ExceptionUtils;
 import cn.easyes.extension.context.Interceptor;
 import cn.easyes.extension.context.Invocation;
@@ -10,10 +12,13 @@ import cn.easyes.extension.context.Invocation;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -76,11 +81,23 @@ public class Plugin implements InvocationHandler {
         // 检查被@Signature标记的方法是否存在
         for (Signature sig : sigs) {
             Set<Method> methods = signatureMap.computeIfAbsent(sig.type(), k -> new HashSet<>());
-            try {
-                Method method = sig.type().getMethod(sig.method(), sig.args());
-                methods.add(method);
-            } catch (NoSuchMethodException e) {
-                throw new RuntimeException("Could not find method on " + sig.type() + " named " + sig.method() + ". Cause: " + e, e);
+            if (sig.useRegexp()) {
+                Pattern pattern = Pattern.compile(sig.method());
+                Set<Method> methodSet = Arrays.stream(sig.type().getMethods())
+                    .filter(item -> pattern.matcher(item.getName()).matches())
+                    .collect(Collectors.toSet());
+
+                if (CollectionUtils.isEmpty(methodSet)) {
+                    throw new EasyEsException("This regular expression does not match any methods:" + sig.type() + " named " + sig.method());
+                }
+                methods.addAll(methodSet);
+            } else {
+                try {
+                    Method method = sig.type().getMethod(sig.method(), sig.args());
+                    methods.add(method);
+                } catch (NoSuchMethodException e) {
+                    throw new EasyEsException("Could not find method on " + sig.type() + " named " + sig.method() + ". Cause: " + e, e);
+                }
             }
         }
         return signatureMap;
